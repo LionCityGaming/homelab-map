@@ -134,6 +134,27 @@ class ConfigTest(unittest.TestCase):
                 config.load(path)  # variable no longer set
 
 
+class SecretsTest(unittest.TestCase):
+    def test_credentials_never_reach_warnings(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "c.yaml")
+            with open(path, "w") as f:
+                f.write("sources:\n  proxmox:\n    url: https://pve\n    token_id: ${HM_ID}\n"
+                        "    token_secret: ${HM_SECRET}\n  unifi:\n    url: https://gw\n    password: ${HM_PASS}\n")
+            with mock.patch.dict(os.environ, {"HM_ID": "root@pam!map", "HM_SECRET": "0f1e2d3c-secret\r",
+                                              "HM_PASS": "correct horse!"}):
+                cfg = config.load(path)
+        self.assertEqual(cfg["sources"]["proxmox"]["token_secret"], "0f1e2d3c-secret")  # \r from a Windows .env
+        g = Graph()
+        g.warn("WARNING: proxmox: unavailable (Invalid header value b'PVEAPIToken=root@pam!map=0f1e2d3c-secret')")
+        g.warn("login failed for correct horse!")
+        g.warn("WARNING: homelab-map is fine")
+        joined = " ".join(g.warnings)
+        for secret in ("0f1e2d3c-secret", "correct horse!", "root@pam!map"):
+            self.assertNotIn(secret, joined)
+        self.assertIn("WARNING: homelab-map is fine", g.warnings)  # ordinary text is left alone
+
+
 class UnifiTest(unittest.TestCase):
     RAW = {
         "devices": [

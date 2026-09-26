@@ -53,13 +53,41 @@ def fetch(cfg):
     return {"hosts": hosts, "guests": guests}
 
 
+def _find_host(graph, host, raw, url_host):
+    """A Proxmox node whose reported IP matches no device (Proxmox takes it from /etc/hosts, which
+    can be out of date). Try its name, then the address in the configured URL (single node), then
+    the device UniFi already shows most of its guests under."""
+    named = graph.by_name(host["name"])
+    if named is not None and named.kind not in ("vm", "lxc", "container"):
+        return named
+    if len(raw["hosts"]) == 1 and url_host:
+        by_url = graph.by_ip(url_host)
+        if by_url is not None:
+            return by_url
+    parents = {}
+    for g in raw["guests"]:
+        if g["node"] == host["name"]:
+            n = next((graph.by_mac(m) for m in g["macs"] if graph.by_mac(m)), None)
+            if n is not None and n.parent in graph.nodes and graph.nodes[n.parent].kind not in ("switch", "ap", "gateway"):
+                parents[n.parent] = parents.get(n.parent, 0) + 1
+    if parents:
+        return graph.nodes[max(parents, key=parents.get)]
+    return None
+
+
 def apply(graph, cfg, data_dir):
     raw = cached(data_dir, "proxmox", lambda: fetch(cfg), graph)
     if not raw:
         return
     host_ids = {}
+    url_host = urllib.parse.urlparse(cfg["url"]).hostname or ""
     for h in raw["hosts"]:
         node = graph.by_ip(h["ip"]) if h["ip"] else None
+        if node is None:
+            node = _find_host(graph, h, raw, url_host)
+            if node is not None and h["ip"]:
+                graph.warn(f"WARNING: Proxmox node {h['name']} reports its IP as {h['ip']}, but it's {node.ip or '?'} "
+                           f"on the network (a stale address in its /etc/hosts?); matched it to {node.name}")
         if node is None:
             node = graph.add(Node(f"pve:{h['name']}", h["name"], "physical", ip=h["ip"], source="proxmox"))
         elif node.kind == "vm":  # UniFi's guess was wrong: this is a host

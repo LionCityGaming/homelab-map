@@ -43,11 +43,10 @@ are greyed out with a dashed border, and 🌐 marks services reachable from the 
 
 ## Status
 
-This is an early release (v0.2). The core has been run for real against one homelab (UniFi, Docker,
-Caddy over SSH, BookStack), and the layout is tested against thousands of generated homelabs. These
-parts are written but **not yet tested on a real setup**, so reports are very welcome:
+This is an early release (v0.2). The core has been run for real against one homelab (UniFi, Proxmox,
+Docker, Caddy over SSH, BookStack), and the layout is tested against thousands of generated homelabs.
+These parts are written but **not yet tested on a real setup**, so reports are very welcome:
 
-- the Proxmox source
 - sending alerts to Gotify, ntfy or a webhook
 - the self-hosted UniFi Network application (UniFi OS consoles are tested)
 - more than one Docker host

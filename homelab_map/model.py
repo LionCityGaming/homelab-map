@@ -88,6 +88,8 @@ class Graph:
                     n.parent = node.parent
 
     def warn(self, message):
+        from .config import redact
+        message = redact(message)
         if message not in self.warnings:
             self.warnings.append(message)
 

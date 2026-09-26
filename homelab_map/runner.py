@@ -12,12 +12,13 @@ import time
 
 from . import drawio, notify, render
 from .collect import collect
+from .config import redact
 from .layout import LayoutError
 from .outputs.bookstack import BookStack
 
 
 def log(msg):
-    print(f"{datetime.datetime.now():%Y-%m-%d %H:%M:%S} {msg}", flush=True)
+    print(f"{datetime.datetime.now():%Y-%m-%d %H:%M:%S} {redact(msg)}", flush=True)
 
 
 def load_state(data_dir):
@@ -34,6 +35,7 @@ def save_state(data_dir, state):
 
 
 def alert(cfg, state, key, title, message):
+    message = redact(message)
     alerts = state.setdefault("alerts", {})
     if alerts.get(key) != message:
         notify.send(cfg["notify"], title, message, log)

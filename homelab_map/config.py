@@ -81,6 +81,29 @@ DEFAULTS = {
 }
 
 _VAR = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+SECRET_KEYS = {"password", "token", "token_secret", "token_id", "secret", "pass"}
+_SECRETS = set()
+
+
+def redact(text):
+    """Mask every credential from the config in text that's about to be shown, logged or sent.
+    Error messages from libraries sometimes quote what they were given (a header, a URL), and a
+    credential must never reach a warning, alert, log or the web viewer that way."""
+    text = str(text)
+    for secret in sorted(_SECRETS, key=len, reverse=True):
+        text = text.replace(secret, "***")
+    return text
+
+
+def _remember_secrets(value, key=""):
+    if isinstance(value, dict):
+        for k, v in value.items():
+            _remember_secrets(v, k)
+    elif isinstance(value, list):
+        for v in value:
+            _remember_secrets(v, key)
+    elif isinstance(value, str) and key in SECRET_KEYS and len(value) >= 4:  # never empty: that would mask everything
+        _SECRETS.add(value)
 
 
 class ConfigError(Exception):
@@ -92,7 +115,7 @@ def _expand(value):
         def sub(m):
             if m.group(1) not in os.environ:
                 raise ConfigError(f"config refers to ${{{m.group(1)}}} but it isn't set (add it to .env)")
-            return os.environ[m.group(1)]
+            return os.environ[m.group(1)].strip("\r\n")  # .env files saved on Windows end lines with \r
         return _VAR.sub(sub, value)
     if isinstance(value, list):
         return [_expand(v) for v in value]
@@ -119,6 +142,7 @@ def load(path):
     if not isinstance(raw, dict):
         raise ConfigError(f"{path} should be a YAML mapping")
     cfg = _merge(DEFAULTS, _expand(raw))
+    _remember_secrets(cfg)
     # a source is enabled just by being configured, unless it says enabled: false
     for name in ("unifi", "proxmox", "caddy"):
         src = raw.get("sources", {}).get(name)

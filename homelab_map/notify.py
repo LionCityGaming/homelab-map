@@ -2,8 +2,11 @@
 import json
 import urllib.request
 
+from .config import redact
+
 
 def send(cfg, title, message, log=print):
+    title, message = redact(title), redact(message)
     log(f"{title}: {message}")
     g, n, w = cfg["gotify"], cfg["ntfy"], cfg["webhook"]
     targets = []
