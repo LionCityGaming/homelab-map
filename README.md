@@ -7,6 +7,13 @@
 
 <sub>An example homelab, drawn by `homelab-map demo`. Click the image for full size.</sub>
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/demo-dark-closeup.png">
+  <img alt="Close-up: a gateway and switch above a Proxmox host with VMs and LXCs (one stopped, shown greyed out), a NAS with a backup VM, and a Docker host whose containers are grouped into lanes such as Media Automation and Infrastructure, with a globe on the public ones" src="docs/demo-light-closeup.png">
+</picture>
+
+<sub>Close-up: a Proxmox host and its guests, and a Docker host's containers grouped into lanes. Stopped things are greyed out; 🌐 marks public services.</sub>
+
 A network map of your homelab that draws and updates itself: the gateway, switches and access points,
 the devices on them, the VMs and LXCs on your hypervisors, and the Docker containers on each host,
 with every line placed so that **no two lines ever touch or cross**.
