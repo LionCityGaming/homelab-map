@@ -70,6 +70,12 @@ class LayoutTest(unittest.TestCase):
         self.assertIn("#1E1F24", dark)
         self.assertIn("{{UPDATED}}", light)
 
+    def test_demo_homelab(self):
+        from homelab_map import demo
+        light, dark, scene = build(demo.graph(), dict(DEFAULTS))
+        self.assertEqual(check(scene), [])
+        self.assertIn("Vaultwarden", light)
+
     def test_empty_homelab(self):
         g = Graph()
         g.repair()

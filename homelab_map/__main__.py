@@ -3,13 +3,16 @@
   python -m homelab_map run      keep the map up to date (checks every `interval` seconds)
   python -m homelab_map once     one check, publish if changed, then exit
   python -m homelab_map check    show what was found and any warnings; publishes nothing
+  python -m homelab_map demo     draw a made-up homelab (no config needed) to data/output/demo-*
 """
 import argparse
 import os
 import sys
 
 from . import __version__
-from .config import ConfigError, load
+import copy
+
+from .config import ConfigError, DEFAULTS, load
 from .layout import LayoutError
 from .palette import PaletteError
 
@@ -38,17 +41,43 @@ def print_tree(graph):
     walk(graph.nodes["internet"], 0)
 
 
+def demo(cfg):
+    from . import demo as sample, drawio, render
+    out = os.path.join(cfg["data_dir"], "output")
+    cfg = dict(cfg, title="Example Homelab")
+    light, dark, scene = drawio.build(sample.graph(), cfg)
+    url = cfg["render"]["export_url"]
+    try:
+        render.wait_ready(url, seconds=20)
+    except RuntimeError:
+        url = None
+    for theme, xml in (("light", light), ("dark", dark)):
+        xml = xml.replace(drawio.UPDATED, "just now")
+        with open(os.path.join(out, f"demo-{theme}.drawio"), "w", encoding="utf8") as f:
+            f.write(xml)
+        if url:
+            with open(os.path.join(out, f"demo-{theme}.png"), "wb") as f:
+                f.write(render.png(url, xml))
+    print(f"wrote demo-light/demo-dark .drawio{' and .png' if url else ''} to {out}"
+          + ("" if url else f" (no renderer at {url or cfg['render']['export_url']}, so no PNGs)"))
+    print(f"layout OK: {len(scene.edges)} lines, no overlaps")
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="homelab-map", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", nargs="?", default="run", choices=["run", "once", "check"])
+    parser.add_argument("command", nargs="?", default="run", choices=["run", "once", "check", "demo"])
     parser.add_argument("--config", default=os.environ.get("HOMELAB_MAP_CONFIG", "/config/config.yaml"))
     parser.add_argument("--data", help="data directory (default: data_dir in config, /data)")
     parser.add_argument("--force", action="store_true", help="publish even if nothing changed (once)")
     parser.add_argument("--version", action="version", version=f"homelab-map {__version__}")
     args = parser.parse_args(argv)
     try:
-        cfg = load(args.config)
+        if args.command == "demo" and not os.path.exists(args.config):
+            cfg = copy.deepcopy(DEFAULTS)
+        else:
+            cfg = load(args.config)
     except ConfigError as e:
         print(f"config problem: {e}", file=sys.stderr)
         return 2
@@ -88,6 +117,8 @@ def main(argv=None):
             for title, names in sorted(groups.items(), key=lambda kv: kv[0].split("  ", 1)[-1]):
                 print(f'    "{title}": [{", ".join(sorted(names))}]')
         return 0
+    if args.command == "demo":
+        return demo(cfg)
     if args.command == "once":
         state = runner.load_state(cfg["data_dir"])
         try:

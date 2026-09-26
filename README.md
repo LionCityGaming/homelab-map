@@ -1,5 +1,12 @@
 # homelab-map
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/demo-dark.png">
+  <img alt="An example map: internet, gateway, switches and access points, a Proxmox host with VMs and LXCs, a Docker host with containers grouped into lanes, and IoT and WireGuard lanes off the gateway" src="docs/demo-light.png">
+</picture>
+
+<sub>An example homelab, drawn by `homelab-map demo`. Click the image for full size.</sub>
+
 A network map of your homelab that draws and updates itself: the gateway, switches and access points,
 the devices on them, the VMs and LXCs on your hypervisors, and the Docker containers on each host,
 with every line placed so that **no two lines ever touch or cross**.
@@ -22,16 +29,38 @@ are greyed out with a dashed border, and 🌐 marks services reachable from the 
 networks (IoT, guest) and VPN clients are drawn as lanes off the gateway; a Docker host's containers
 sit in one box, one lane per group (Media Automation, Infrastructure, ...).
 
+## Status
+
+This is an early release (v0.1). The core has been run for real against one homelab (UniFi, Docker,
+Caddy over SSH, BookStack), and the layout is tested against thousands of generated homelabs. These
+parts are written but **not yet tested on a real setup**, so reports are very welcome:
+
+- the Proxmox source
+- sending alerts to Gotify, ntfy or a webhook
+- the self-hosted UniFi Network application (UniFi OS consoles are tested)
+- more than one Docker host
+
+If something is drawn in the wrong place, or a source doesn't work, please
+[open an issue](../../issues) with the output of `check` (remove anything private first).
+
 ## Quick start
 
 You need Docker with Compose, on a machine that can reach your gateway (and Proxmox, if you use it).
 
 ```bash
-git clone <this repo> homelab-map && cd homelab-map
+git clone https://github.com/LionCityGaming/homelab-map.git && cd homelab-map
 cp config.example.yaml config.yaml
 cp .env.example .env
 mkdir data
 ```
+
+To see what it draws before configuring anything:
+
+```bash
+docker compose run --rm homelab-map demo
+```
+
+That writes an example map (the one above) to `data/output/demo-light.png` and `demo-dark.png`.
 
 1. Fill in `config.yaml` (it's commented) and put the passwords and tokens it refers to in `.env`.
 2. See what it finds, before anything is published:
@@ -172,6 +201,7 @@ against thousands of randomly generated homelabs.
 pip install -r requirements.txt
 python -m unittest discover -s tests -t .
 python -m homelab_map check --config config.yaml --data ./data
+python -m homelab_map demo --data ./data     # PNGs need the renderer: set render.export_url
 ```
 
 ## License
