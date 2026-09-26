@@ -154,8 +154,9 @@ name, or the subdomain for host-networked containers) or to a device by IP.
 
 The PNG carries the diagram inside it, so opening it in draw.io gets you the editable version.
 
-For BookStack, create an API token (*your profile → API Tokens*) for a user whose role has
-**Access System API** and can edit the page.
+For BookStack, make a **dedicated user** for this, with a role that has **Access System API** and
+can edit only the book the map lives in, then create an API token for it (*that user's profile → API
+Tokens*). Don't use an admin's token: a token can do whatever its user can.
 
 ## Alerts
 
@@ -174,14 +175,47 @@ colors:                  # your own, on top: one colour, or [light, dark]
 
 ## Security
 
-- Secrets only in `.env`, which is git-ignored. `config.yaml` refers to them as `${NAME}`.
-- Every account is read-only: a UniFi View Only admin, a Proxmox PVEAuditor token, Docker through a
-  socket proxy that only allows reading containers and images, and optionally an SSH key that can
-  only print the Caddyfile. The BookStack token is the one thing that writes, and only to the page
-  you give it.
-- The web viewer has no login: keep port 8080 on your LAN, or put it behind your reverse proxy and SSO.
-- The app runs as a non-root user. Nothing else is exposed: the renderer and socket proxy have no
-  published ports.
+A map of your network is itself sensitive: it lists your devices, their IP addresses, what runs where
+and what's exposed to the internet. Treat the map, and the access this app needs, accordingly.
+
+**What the app does to limit risk**
+
+- Secrets live only in `.env`, which is git-ignored and kept out of the Docker image. `config.yaml`
+  refers to them as `${NAME}`, and they're never written to logs, alerts or the web viewer.
+- Every source is read-only: a UniFi View Only admin, a Proxmox PVEAuditor token, Docker through a
+  socket proxy that refuses anything but reads, and (optionally) an SSH key that can only print the
+  Caddyfile.
+- It runs as a non-root user. The renderer and the socket proxy publish no ports; only the viewer
+  does.
+- Device and container names come from your network (any device can pick its own DHCP hostname), so
+  they're escaped everywhere they're drawn or shown, never treated as HTML.
+- The SSH host key of your Caddy host is remembered in `./data`, so if it ever changes the fetch fails
+  and you get an alert, rather than the app trusting whatever answers.
+
+**Things you should know and decide on**
+
+- **The web viewer has no login.** Anyone who can reach port 8080 can see your whole map. Keep it on
+  a trusted network (not reachable from IoT or guest networks), or put it behind your reverse proxy
+  with authentication, or turn it off (`outputs.web.enabled: false`).
+- **The Docker socket proxy can read every container's settings, including environment variables**,
+  which is where many apps keep passwords. In this compose file it is only reachable by the app
+  itself. If you run a proxy on another Docker host, **don't expose its port to your whole network**:
+  firewall it so only the homelab-map host can connect.
+- **Certificate checks are off by default** for UniFi and Proxmox (`verify_tls: false`), because
+  their certificates are usually self-signed. Someone already inside your network could then
+  intercept the read-only UniFi password or Proxmox token. If your console or Proxmox has a valid
+  certificate (e.g. via ACME), set `verify_tls: true`.
+- **The BookStack token can do whatever its user can.** Use a dedicated user limited to the map's
+  book (see above), not an admin.
+- **Grouping guesses look images up online.** For containers you haven't grouped yourself, the image
+  name is looked up on GitHub and Docker Hub, which tells them which apps you run. Set
+  `containers.lookup_online: false` to keep it local (guesses then use only the image's own labels).
+- **Alerts contain device and container names.** Topics on the public ntfy.sh server are readable by
+  anyone who guesses the name: use a long random topic, an access token, or your own ntfy server.
+- **Images are tagged `latest`.** For stricter setups, pin `jgraph/export-server`,
+  `tecnativa/docker-socket-proxy` and `python` to specific versions or digests, and update deliberately.
+
+Found a security problem? Please report it privately; see [SECURITY.md](SECURITY.md).
 
 ## Troubleshooting
 
@@ -210,6 +244,14 @@ python -m unittest discover -s tests -t .
 python -m homelab_map check --config config.yaml --data ./data
 python -m homelab_map demo --data ./data     # PNGs need the renderer: set render.export_url
 ```
+
+## How this was made
+
+homelab-map was built with [Claude Code](https://claude.com/claude-code), Anthropic's AI coding tool,
+working with me: I set the direction and design rules and tested it against my own homelab, and
+Claude Code wrote most of the code. Commits it helped with are marked `Co-Authored-By: Claude`.
+Please review it as you would any code you run with access to your network, and report anything
+that looks wrong.
 
 ## License
 

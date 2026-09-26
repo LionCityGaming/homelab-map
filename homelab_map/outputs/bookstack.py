@@ -8,6 +8,7 @@ Create one under your user's profile > API Tokens.
 """
 import json
 import re
+from html import escape
 import urllib.request
 import uuid
 
@@ -53,8 +54,8 @@ class BookStack:
             return f"updated drawing {found.group(1)} on page {self.page_id}"
         image = self._multipart("/image-gallery", {"type": "drawio", "uploaded_to": self.page_id,
                                                    "name": "network-map.png"}, png)
-        html = (page.get("html") or "") + (f'<div drawio-diagram="{image["id"]}" contenteditable="false">'
-                                           f'<img src="{image["url"]}" alt="{self.title}"></div>')
+        html = (page.get("html") or "") + (f'<div drawio-diagram="{int(image["id"])}" contenteditable="false">'
+                                           f'<img src="{escape(image["url"])}" alt="{escape(self.title)}"></div>')
         self._json("PUT", f"/pages/{self.page_id}", {"html": html})
         state["bookstack_drawing"] = image["id"]
         return f"added drawing {image['id']} to page {self.page_id}"

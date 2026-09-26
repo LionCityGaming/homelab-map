@@ -9,17 +9,23 @@ A site counts as public if it imports one of public_snippets (e.g. `import publi
 matches one of public_hosts (regexes). Each site's reverse_proxy target is matched to a container
 (host IP + published port, or container name + internal port) or to a device by IP.
 """
+import os
 import re
 import subprocess
 
 from . import cached
 
 
-def fetch(cfg):
+def fetch(cfg, data_dir):
     if cfg["caddyfile"]:
         with open(cfg["caddyfile"], encoding="utf8") as f:
             return {"text": f.read()}
-    cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=accept-new"]
+    # The host key is trusted the first time and remembered in the data volume, so it survives the
+    # container being recreated: if it ever changes, the fetch fails (and you get an alert) instead
+    # of silently trusting whatever answers.
+    known_hosts = os.path.join(data_dir, "ssh_known_hosts")
+    cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=accept-new",
+           "-o", f"UserKnownHostsFile={known_hosts}"]
     if cfg["ssh_key"]:
         cmd += ["-i", cfg["ssh_key"]]
     text = subprocess.run(cmd + [cfg["ssh"], f"cat {cfg['path']}"], capture_output=True, text=True,
@@ -54,7 +60,7 @@ def parse(text, public_snippets, public_hosts):
 
 
 def apply(graph, cfg, data_dir):
-    raw = cached(data_dir, "caddy", lambda: fetch(cfg), graph)
+    raw = cached(data_dir, "caddy", lambda: fetch(cfg, data_dir), graph)
     if not raw:
         return
     containers = [n for n in graph.nodes.values() if n.kind == "container"]

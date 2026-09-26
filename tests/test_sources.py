@@ -153,7 +153,7 @@ class UnifiTest(unittest.TestCase):
              "uplink_mac": "aa:00:00:00:00:02", "wired": True},
             {"mac": "bc:24:11:00:00:11", "name": "Plex", "fixed": True, "ip": "192.168.1.11", "network": "LAN",
              "uplink_mac": "aa:00:00:00:00:02", "wired": True},
-            {"mac": "02:34:14:00:00:12", "name": "Home Assistant", "fixed": True, "ip": "192.168.1.13",
+            {"mac": "06:11:22:00:00:12", "name": "Home Assistant", "fixed": True, "ip": "192.168.1.13",
              "network": "LAN", "uplink_mac": "aa:00:00:00:00:02", "wired": True},
             {"mac": "bc:24:11:00:00:13", "name": "Offline LXC", "fixed": True, "ip": "192.168.1.14", "network": "LAN",
              "uplink_mac": "aa:00:00:00:00:02", "wired": True},
@@ -171,7 +171,7 @@ class UnifiTest(unittest.TestCase):
              "uplink_mac": "aa:00:00:00:00:02", "port": 3},
             {"mac": "bc:24:11:00:00:11", "ip": "192.168.1.11", "network": "LAN", "wired": True,
              "uplink_mac": "aa:00:00:00:00:02", "port": 3},
-            {"mac": "02:34:14:00:00:12", "ip": "192.168.1.13", "network": "LAN", "wired": True,
+            {"mac": "06:11:22:00:00:12", "ip": "192.168.1.13", "network": "LAN", "wired": True,
              "uplink_mac": "aa:00:00:00:00:02", "port": 3},
             {"mac": "bc:24:11:00:00:14", "ip": "192.168.1.15", "network": "LAN", "wired": True,
              "uplink_mac": "aa:00:00:00:00:01", "port": 2},
@@ -202,7 +202,7 @@ class UnifiTest(unittest.TestCase):
 
     def test_virtual_mac(self):
         self.assertTrue(is_virtual_mac("BC:24:11:aa:bb:cc"))
-        self.assertTrue(is_virtual_mac("02:34:14:00:00:00"))
+        self.assertTrue(is_virtual_mac("06:11:22:00:00:00"))
         self.assertFalse(is_virtual_mac("b4:2e:99:a8:50:a2"))
 
 
