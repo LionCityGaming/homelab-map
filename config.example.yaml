@@ -1,0 +1,124 @@
+# homelab-map configuration. Copy to config.yaml and edit.
+#
+# Secrets never go in this file: write ${NAME} and put the value in .env.
+# After editing, run:  docker compose run --rm homelab-map check
+# to see everything that was found, as a tree, plus any warnings.
+
+title: Homelab Network Map
+interval: 60                    # seconds between checks (only changes are re-rendered and published)
+date_format: "%Y-%m-%d %H:%M"   # "Last updated" line, e.g. "%d/%m/%Y %H:%M"
+theme: dark                     # dark | light: the version rendered to PNG/PDF and published
+palette: default                # default | vivid | pastel | mono
+internet_label: Internet        # e.g. your ISP's name
+
+# Your own colours, on top of the palette. Each is one colour, or [light, dark].
+# Box types (physical, lxc, vm, container, stopped, internet, containers_box) take fill and border.
+# colors:
+#   physical: {fill: ["#DAE8FC", "#1A5F7A"], border: ["#6C8EBF", "#6BB8D4"]}
+#   container: {fill: "#FFE6CC", border: "#D79B00"}
+#   background: ["#FFFFFF", "#1E1F24"]
+#   text: ["#1A1A2E", "#F1F5F9"]
+#   subtext: ["#4A5568", "#CBD5E0"]       # IPs, ports
+#   lines: ["#1A1A2E", "#CBD5E0"]
+
+sources:
+  # UniFi builds the tree: gateway -> switches/APs -> devices, plus networks and WireGuard peers.
+  # Create a local "View Only" admin (Settings > Admins & Users), not your own account.
+  unifi:
+    url: https://192.168.1.1
+    username: ${UNIFI_USER}
+    password: ${UNIFI_PASS}
+    # site: default
+    # verify_tls: false          # consoles use a self-signed certificate
+    # clients: fixed_ip          # fixed_ip | all | none: which clients to draw
+    # lane_networks: auto        # networks drawn as a lane off the gateway; "auto" = all but your main one
+    # wireguard: true
+    # guess_guests: true         # VMs sharing a host's switch port are drawn under that host
+
+  # Proxmox: which VMs/LXCs run where, and whether they're running.
+  # Token: Datacenter > Permissions > API Tokens, then give it the PVEAuditor role on "/".
+  # proxmox:
+  #   url: https://192.168.1.10:8006
+  #   token_id: ${PROXMOX_TOKEN_ID}
+  #   token_secret: ${PROXMOX_TOKEN_SECRET}
+
+  # Docker hosts. "ip" ties the host to a device found above (or it's added on its own).
+  # docker-proxy is the read-only socket proxy from docker-compose.yml, for this machine.
+  # For another host, run tecnativa/docker-socket-proxy there and point at it.
+  docker:
+    hosts:
+      - ip: 192.168.1.12
+        endpoint: tcp://docker-proxy:2375
+      # - name: NAS
+      #   ip: 192.168.1.20
+      #   endpoint: tcp://192.168.1.20:2375
+
+  # Caddy: sites that import one of public_snippets (or match public_hosts) get a 🌐.
+  # caddy:
+  #   caddyfile: /caddy/Caddyfile        # mounted read-only (see docker-compose.yml)
+  #   # or over SSH, with a key that can only print the file:
+  #   # ssh: root@192.168.1.17
+  #   # ssh_key: /config/caddy_key
+  #   public_snippets: [public]
+  #   public_hosts: []                   # regexes, e.g. ["^(plex|jellyfin)\\."]
+
+# Devices no source knows about (or extra detail for ones they do: matched by MAC, IP or name).
+# devices:
+#   - name: NAS
+#     ip: 192.168.1.20
+#     kind: physical             # gateway | switch | ap | physical | vm | lxc | client
+#     parent: Office Switch      # what it plugs into: a name, IP or MAC
+#   - name: Pi-hole
+#     ip: 192.168.1.53
+#     kind: lxc
+#     parent: 192.168.1.10
+
+# Fixes, by name, IP or MAC.
+# overrides:
+#   rename:
+#     "USW Flex 2.5G 8 PoE - Office": Office Switch
+#     "aa:bb:cc:dd:ee:ff": Living Room TV
+#   hide: ["Old Printer", "192.168.1.99"]
+#   parent:
+#     Plex: Proxmox
+#   kind:
+#     "Home Assistant": vm
+
+containers:
+  # Groups (lanes) for containers, by container name. Anything unlisted is placed by best guess from
+  # its description; `check` prints those guesses ready to paste here.
+  # Emoji and two spaces before the name, if you like the look.
+  # groups:
+  #   "🎬  Media Automation": [radarr, sonarr, prowlarr]
+  #   "⚙️  Infrastructure": [authentik-server, caddy]
+  # names:                     # container name -> label
+  #   immich_server: Immich
+  # ports:                     # for host-networked containers (Docker knows no port for them)
+  #   bambuddy: 8010
+  # hide: [watchtower]
+  # auto_group: true
+  # lookup_online: true        # use GitHub / Docker Hub descriptions for those guesses
+  # lane_columns: 3
+  # Labels work too: homelab-map.group, homelab-map.name, homelab-map.port, homelab-map.hide=true
+
+# layout:
+#   lane_threshold: 6          # more leaf devices than this under one parent are drawn as a lane
+
+outputs:
+  files:
+    formats: [drawio, png, pdf]      # written to ./data/output
+  web:
+    enabled: true
+    port: 8080
+  # BookStack: the map goes on this page as an editable drawing (added the first time).
+  # bookstack:
+  #   url: http://192.168.1.12:6875
+  #   token_id: ${BOOKSTACK_TOKEN_ID}
+  #   token_secret: ${BOOKSTACK_TOKEN_SECRET}
+  #   page_id: 12
+
+# Alerts: new warnings, and failures. Each is sent once, not every minute.
+# notify:
+#   gotify: {url: http://192.168.1.12:8085, token: ${GOTIFY_TOKEN}}
+#   ntfy: {url: https://ntfy.sh/your-private-topic}
+#   webhook: {url: https://example.com/hook}

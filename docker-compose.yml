@@ -1,0 +1,44 @@
+services:
+  homelab-map:
+    build: .
+    container_name: homelab-map
+    restart: unless-stopped
+    env_file: .env                     # your secrets; never commit this file
+    environment:
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+      - ./data:/data                   # cache, state and the rendered map (data/output)
+      # Optional: a Caddyfile to read public sites from (see sources.caddy in config.yaml)
+      # - /path/to/Caddyfile:/caddy/Caddyfile:ro
+      # Optional: an SSH key for reading the Caddyfile over SSH instead
+      # - ./caddy_key:/config/caddy_key:ro
+    ports:
+      - "8080:8080"                    # built-in viewer; no login, keep it on your LAN or behind SSO
+    depends_on: [drawio-export, docker-proxy]
+    labels:
+      homelab-map.hide: "true"         # don't draw this stack on the map
+
+  # Renders the map to PNG/PDF. Only reachable from homelab-map (no ports published).
+  drawio-export:
+    build:
+      context: .
+      dockerfile: export.Dockerfile
+    container_name: homelab-map-drawio-export
+    restart: unless-stopped
+    labels:
+      homelab-map.hide: "true"
+
+  # Read-only view of this host's Docker API: container list and image labels only.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: homelab-map-docker-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    labels:
+      homelab-map.hide: "true"

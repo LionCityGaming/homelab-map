@@ -1,0 +1,7 @@
+.env
+config.yaml
+data/
+caddy_key*
+tests/
+**/__pycache__
+.git
