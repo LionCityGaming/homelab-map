@@ -327,7 +327,10 @@ def _measure(t):
     t.row_w = row
     t.sub_w = max(t.w, row)
     if t.vpn:
-        t.sub_w += t.vpn.w + SIBLING_GAP
+        # the VPN lane sits just left of the node; reserve width only if the node could be too close
+        # to the left edge for it (centring on a child can move the node up to half its width)
+        t.vpn_pad = max(0, t.vpn.w + SIBLING_GAP - (t.sub_w / 2 - t.w))
+        t.sub_w += t.vpn_pad
     return t.sub_w
 
 
@@ -336,10 +339,10 @@ def _item_w(it):
 
 
 def _place_x(t, left):
-    if t.vpn:  # the VPN lane sits left of everything else, beside the node
-        t.vpn.x = left
-        left += t.vpn.w + SIBLING_GAP
-        inner = t.sub_w - t.vpn.w - SIBLING_GAP
+    if t.vpn:  # room kept on the left for the VPN lane, if the node needed it (see _measure)
+        outer_left = left
+        left += t.vpn_pad
+        inner = t.sub_w - t.vpn_pad
     else:
         inner = t.sub_w
     if t.hoisted:
@@ -364,12 +367,16 @@ def _place_x(t, left):
     if t.grid:
         t.grid.x = x if t.items else start
         t.x = t.grid.x + t.grid.mid_centre() - t.w / 2  # over the middle column, clear of all channels
+        if t.vpn:
+            t.vpn.x = max(t.x - SIBLING_GAP - t.vpn.w, outer_left)
         return
     row_centre = start + t.row_w / 2 if t.items else left + inner / 2
     # centre the node over the item nearest the middle when that one is close, so it gets a straight line
     near = min(centres, key=lambda c: abs(c - row_centre), default=row_centre)
     cx = near if abs(near - row_centre) <= t.w / 2 or len(centres) == 1 else row_centre
     t.x = min(max(cx - t.w / 2, left), left + inner - t.w)
+    if t.vpn:
+        t.vpn.x = max(t.x - SIBLING_GAP - t.vpn.w, outer_left)
 
 
 def _place_item(it, x):
@@ -428,7 +435,7 @@ def layout(graph, cfg, top=0, left=0):
     bands = {}
     for depth in range(max(rows) + 1):
         trees = rows.get(depth, [])
-        row_h = max((t.h for t in trees), default=0)
+        row_h = max((max(t.h, t.vpn.h if t.vpn else 0) for t in trees), default=0)
         for t in trees:
             t.y = row_top
         band = BAND_PAD * 2
