@@ -62,7 +62,7 @@ DEFAULTS = {
         "auto_group": True,              # guess a group for unlisted containers from their description
         "lookup_online": True,           # allow GitHub / Docker Hub lookups for those guesses
         "keywords": {},                  # extra or replacement keyword lists per group
-        "lane_columns": 3,               # group lanes per row under a Docker host
+        "lane_columns": 3,               # columns of container lanes under a Docker host (made odd)
     },
     "layout": {
         "lane_threshold": 6,             # more leaf devices than this under one parent become a lane

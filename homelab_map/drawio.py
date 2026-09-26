@@ -16,7 +16,7 @@ INTER = "fontFamily=Inter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3F
 # fontFamily, so the (invisible) backing sheet names it to get it loaded.
 MONO = "fontFamily=JetBrains Mono;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DJetBrains%2BMono;"
 UPDATED = "{{UPDATED}}"
-HEADER_H = 190
+HEADER_TOP = 10        # the map starts level with the title, unless that bumps into the header
 LEGEND = [("phys", "Physical Devices"), ("lxc", "LXC Containers"), ("vm", "Virtual Machines"),
           ("docker", "Docker Containers"), ("stopped", "Stopped")]
 
@@ -55,31 +55,55 @@ def label(node, subtext):
             f"{html.escape(node.sub())}</span>")
 
 
-def header(scene, title, used_styles, public, subtext):
-    """Title, "Last updated" line and a legend of only what's on the map, above the tree."""
-    scene.boxes.append(Box("title", 0, 0, 900, 45, "legend", "legend", title=f"<b>{html.escape(title)}</b>"))
-    scene.boxes.append(Box("updated", 0, 48, 500, 28, "legend", "legend",
-                           title=f'<span style="color:{subtext};">Last updated: {UPDATED}</span>'))
-    x = 0
+def header(title, used_styles, public, subtext):
+    """Title, "Last updated" line, and under them a legend of only what's on the map (top left)."""
+    boxes = [Box("title", 0, 0, round(text_w(title, 17)) + 40, 45, "legend", "legend",
+                 title=f"<b>{html.escape(title)}</b>"),
+             Box("updated", 0, 48, 330, 28, "legend", "legend",
+                 title=f'<span style="color:{subtext};">Last updated: {UPDATED}</span>')]
     entries = [(s, t) for s, t in LEGEND if s in used_styles]
     if public:
-        entries.append(("public", "Public via reverse proxy"))
-    for style, text in entries:
+        entries.insert(len([e for e in entries if e[0] != "stopped"]), ("public", "Public via reverse proxy"))
+    for i, (style, text) in enumerate(entries):
+        y = 100 + i * 34
         if style == "public":
-            scene.boxes.append(Box("legend:public-icon", x, 104, 36, 30, "legend", "legend", title="🌐"))
+            boxes.append(Box("legend:public-icon", 0, y - 3, 36, 30, "legend", "legend", title="🌐"))
         else:
-            scene.boxes.append(Box(f"legend:{style}", x, 107, 36, 24, "swatch", style))
-        w = round(text_w(text, 9.5)) + 20
-        scene.boxes.append(Box(f"legend:{style}:text", x + 46, 104, w, 30, "legend", "legend", title=text))
-        x += 46 + w + 30
+            boxes.append(Box(f"legend:{style}", 0, y, 36, 24, "swatch", style))
+        boxes.append(Box(f"legend:{style}:text", 46, y - 3, round(text_w(text, 9.5)) + 20, 30, "legend", "legend",
+                         title=text))
+    return boxes
+
+
+def _clashes(scene, boxes):
+    """Does any box or line of the map come within 30px of the header?"""
+    def near(x0, y0, x1, y1, h):
+        return x0 < h.x + h.w + 30 and h.x - 30 < x1 and y0 < h.y + h.h + 30 and h.y - 30 < y1
+    for h in boxes:
+        if any(near(b.x, b.y, b.x + b.w, b.y + b.h, h) for b in scene.top()):
+            return True
+        for e in scene.edges:
+            for (ax, ay), (bx, by) in zip(e.points, e.points[1:]):
+                if near(min(ax, bx), min(ay, by), max(ax, bx), max(ay, by), h):
+                    return True
+    return False
 
 
 def build(graph, cfg):
     """Graph -> (light_xml, dark_xml, scene). Raises LayoutError if the layout breaks the rules."""
     colors = resolve(cfg)
-    scene = layout(graph, cfg, top=HEADER_H)
-    used = {b.style for b in scene.boxes if b.role in ("node", "item")}
-    header(scene, cfg["title"], used, any(n.public for n in graph.nodes.values()), ld(colors["subtext"]))
+    probe = layout(graph, cfg, top=HEADER_TOP)
+    used = {b.style for b in probe.boxes if b.role in ("node", "item")}
+    head = header(cfg["title"], used, any(n.public for n in graph.nodes.values()), ld(colors["subtext"]))
+    head_w = max(b.x + b.w for b in head)
+    head_h = max(b.y + b.h for b in head)
+    # The map starts beside the title; if that would bump into the header, beside the legend, and
+    # failing that, below it.
+    for top, left in ((HEADER_TOP, 0), (HEADER_TOP, head_w + 40), (head_h + 40, 0)):
+        scene = layout(graph, cfg, top=top, left=left)
+        if not _clashes(scene, head):
+            break
+    scene.boxes += head
     problems = check(scene)
     if problems:
         raise LayoutError("; ".join(problems[:10]))

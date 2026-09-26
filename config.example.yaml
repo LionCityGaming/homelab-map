@@ -98,7 +98,7 @@ containers:
   # hide: [watchtower]
   # auto_group: true
   # lookup_online: true        # use GitHub / Docker Hub descriptions for those guesses
-  # lane_columns: 3
+  # lane_columns: 3          # columns of container lanes under a Docker host (odd: the host sits over the middle one)
   # Labels work too: homelab-map.group, homelab-map.name, homelab-map.port, homelab-map.hide=true
 
 # layout:

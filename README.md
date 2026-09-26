@@ -32,13 +32,18 @@ as an editable draw.io drawing on a BookStack page. Otherwise it does nothing.
 
 Top to bottom it follows the network: Internet → gateway → switches and access points → hosts →
 guests → containers. Colour shows what something is (physical, LXC, VM, container), stopped things
-are greyed out with a dashed border, and 🌐 marks services reachable from the internet. Other
-networks (IoT, guest) and VPN clients are drawn as lanes off the gateway; a Docker host's containers
-sit in one box, one lane per group (Media Automation, Infrastructure, ...).
+are greyed out with a dashed border, and 🌐 marks services reachable from the internet.
+
+- VPN clients sit in a lane beside the gateway; other networks (IoT, guest) are lanes to the right,
+  joined from the gateway's side.
+- A hypervisor's VMs and LXCs are drawn one by one, either side of a straight line down to its
+  Docker VM.
+- A Docker host's containers are grouped into lanes (Media Automation, Infrastructure, ...) in a
+  grid below it, and every lane has its own line.
 
 ## Status
 
-This is an early release (v0.1). The core has been run for real against one homelab (UniFi, Docker,
+This is an early release (v0.2). The core has been run for real against one homelab (UniFi, Docker,
 Caddy over SSH, BookStack), and the layout is tested against thousands of generated homelabs. These
 parts are written but **not yet tested on a real setup**, so reports are very welcome:
 
@@ -232,7 +237,8 @@ Found a security problem? Please report it privately; see [SECURITY.md](SECURITY
 Every parent's subtree gets its own vertical strip, so lines from different parents can't meet.
 Within one parent, a child straight below gets a straight line; children to each side leave the
 parent at their own point and turn at their own level, outermost first, so the lines nest instead
-of crossing. After every layout, every pair of line segments and every line against every box is
+of crossing. Container lanes are each fed down their own channel beside their column, lower lanes
+further out, which nests the same way. After every layout, every pair of line segments and every line against every box is
 checked; a layout that fails is never published (you get an alert instead). The test suite runs this
 against thousands of randomly generated homelabs.
 
