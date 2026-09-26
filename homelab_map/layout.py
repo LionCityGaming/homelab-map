@@ -235,7 +235,8 @@ def _sort_key(n):
     return (KIND_ORDER.get(n.kind, 99), ip_key(n.ip), n.name.lower())
 
 
-def build_tree(graph, cfg):
+def build_tree(graph, cfg, opts=None):
+    opts = opts or {"lane_cols": {}, "grid_cols": {}}
     children = {}
     for n in graph.nodes.values():
         if n.parent:
@@ -259,7 +260,8 @@ def build_tree(graph, cfg):
             boxes = [k for k in boxes if k not in leaves]
             lanes[("auto", "💻  Devices")] = leaves
         def lanes_of(kinds):
-            return [_Lane(f"{node.id}:{title}", title, m, lane_style(kind, m))
+            return [_Lane(f"{node.id}:{title}", title, m, lane_style(kind, m),
+                          cols=opts["lane_cols"].get(f"{node.id}:{title}", 3))
                     for (kind, title), m in lanes.items() if kind in kinds]
         vpn, networks, auto = lanes_of({"vpn"}), lanes_of({"network"}), lanes_of({"auto", "group"})
         if node.kind == "gateway":
@@ -277,9 +279,10 @@ def build_tree(graph, cfg):
             def gkey(title):
                 return (0, group_order.index(title)) if title in group_order else \
                     (2, "") if title.endswith("Other") else (1, title.split("  ", 1)[-1].lower())
-            t.grid = _Grid([_Lane(f"{node.id}:{g}", g, sorted(m, key=lambda c: c.name.lower()), "lane_docker")
+            t.grid = _Grid([_Lane(f"{node.id}:{g}", g, sorted(m, key=lambda c: c.name.lower()), "lane_docker",
+                                  cols=opts["lane_cols"].get(f"{node.id}:{g}", 3))
                             for g, m in sorted(groups.items(), key=lambda kv: gkey(kv[0]))],
-                           cfg["containers"]["lane_columns"])
+                           opts["grid_cols"].get(node.id, cfg["containers"]["lane_columns"]))
         # a host whose only non-leaf child is a Docker host (with just containers): draw that one a
         # row lower, under a straight line, with the rest split either side of it
         dockers = [it for it in t.items if isinstance(it, _Tree) and it.grid and not it.items]
@@ -327,9 +330,15 @@ def _measure(t):
     t.row_w = row
     t.sub_w = max(t.w, row)
     if t.vpn:
-        # the VPN lane sits just left of the node; reserve width only if the node could be too close
-        # to the left edge for it (centring on a child can move the node up to half its width)
-        t.vpn_pad = max(0, t.vpn.w + SIBLING_GAP - (t.sub_w / 2 - t.w))
+        # the VPN lane sits just left of the node. Size the node for all its lines now (so it never
+        # widens later), see exactly where it lands, and reserve only the room the lane still needs.
+        n = len([it for it in t.items if not (isinstance(it, _Lane) and it.side)])
+        if n > 1:
+            t.w = max(t.w, 2 * (EXIT_MARGIN + (n - 1) * MIN_STEP + EDGE_PAD + 2))
+            t.sub_w = max(t.sub_w, t.w)
+        t.vpn_pad = 0
+        _place_x(t, 0)
+        t.vpn_pad = max(0, t.vpn.w + SIBLING_GAP - t.x)
         t.sub_w += t.vpn_pad
     return t.sub_w
 
@@ -423,7 +432,69 @@ def _fit(t):
 
 
 def layout(graph, cfg, top=0, left=0):
-    root = build_tree(graph, cfg)
+    """The finished layout, with lane and grid column counts chosen to waste the least space."""
+    return _layout(graph, cfg, top, left, _compact(graph, cfg) if cfg["layout"].get("compact", True) else None)
+
+
+# ---------------------------------------------------------------- compacting
+_COMPACT_CACHE = {}  # the network's structure rarely changes: reuse the last choice for it
+
+
+def _area(graph, cfg, opts):
+    b = _layout(graph, cfg, 0, 0, opts).top()
+    return (max(x.x + x.w for x in b) - min(x.x for x in b)) * (max(x.y + x.h for x in b) - min(x.y for x in b))
+
+
+def _knobs(root):
+    """Every lane (its item columns) and every container grid (its lane columns) in the tree."""
+    out = []
+
+    def lane(l):
+        out.append(("lane_cols", l.key, list(range(1, min(len(l.nodes), 6) + 1))))
+
+    def walk(t):
+        for it in t.items + ([t.vpn] if t.vpn else []) + ([t.hoisted] if t.hoisted else []):
+            walk(it) if isinstance(it, _Tree) else lane(it)
+        if t.grid:
+            n = t.grid.lane_count()
+            out.append(("grid_cols", t.node.id, [c for c in range(1, min(n, 7) + 1, 2)]))
+            for col in t.grid.cols:
+                for l in col:
+                    lane(l)
+    walk(root)
+    return out
+
+
+def _compact(graph, cfg):
+    """Try other column counts for each lane and grid, one at a time, keeping any that make the whole
+    map smaller (so tall-and-narrow fills space that would otherwise be empty), until nothing helps."""
+    signature = (cfg["layout"]["lane_threshold"], cfg["containers"]["lane_columns"], tuple(cfg["containers"]["groups"]),
+                 tuple(sorted((n.id, n.parent, n.lane, n.kind, n.docker_host) for n in graph.nodes.values())))
+    if signature in _COMPACT_CACHE:
+        return _COMPACT_CACHE[signature]
+    opts = {"lane_cols": {}, "grid_cols": {}}
+    best = _area(graph, cfg, opts)
+    knobs = _knobs(build_tree(graph, cfg, opts))
+    for _ in range(4):
+        improved = False
+        for kind, key, values in knobs:
+            for v in values:
+                if opts[kind].get(key) == v:
+                    continue
+                trial = {**opts, kind: {**opts[kind], key: v}}
+                a = _area(graph, cfg, trial)
+                if a < best * 0.995:
+                    best, opts, improved = a, trial, True
+        if not improved:
+            break
+    if len(_COMPACT_CACHE) > 20:
+        _COMPACT_CACHE.clear()
+    _COMPACT_CACHE[signature] = opts
+    return opts
+
+
+def _layout(graph, cfg, top, left, opts):
+    root = build_tree(graph, cfg, opts)
     _measure(root)
     _place_x(root, left)
     rows = {}

@@ -52,15 +52,31 @@ def random_graph(rng):
     return g
 
 
+def _area(scene):
+    b = scene.top()
+    return (max(x.x + x.w for x in b) - min(x.x for x in b)) * (max(x.y + x.h for x in b) - min(x.y for x in b))
+
+
 class LayoutTest(unittest.TestCase):
     def test_random_homelabs_have_no_overlaps(self):
         rng = random.Random(1234)
-        cfg = dict(DEFAULTS)
+        cfg = {**DEFAULTS, "layout": {**DEFAULTS["layout"], "compact": False}}  # fast: every arrangement
         for i in range(400):
             g = random_graph(rng)
             scene = layout(g, cfg, top=190)
             problems = check(scene)
             self.assertEqual(problems, [], f"homelab #{i}: {problems[:5]}")
+
+    def test_compacting_never_breaks_the_rule_or_grows_the_map(self):
+        rng = random.Random(4321)
+        off = {**DEFAULTS, "layout": {**DEFAULTS["layout"], "compact": False}}
+        for i in range(100):
+            g = random_graph(rng)
+            if len(g.nodes) > 150:
+                continue  # the search is slower on huge ones; covered by the fuzzing script
+            compact, plain = layout(g, dict(DEFAULTS), top=190), layout(g, off, top=190)
+            self.assertEqual(check(compact), [], f"homelab #{i}")
+            self.assertLessEqual(_area(compact), _area(plain) + 1, f"homelab #{i}: compacting made it bigger")
 
     def test_build_writes_both_variants(self):
         g = random_graph(random.Random(7))
