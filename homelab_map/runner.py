@@ -4,6 +4,7 @@
 the network did change; the time shown is when it last did. An output that fails is retried on the
 next run. Alerts are sent once when a problem appears (and again only if it goes away and returns).
 """
+from concurrent.futures import ThreadPoolExecutor
 import datetime
 import hashlib
 import json
@@ -87,13 +88,26 @@ def run_once(cfg, state, force=False):
         _status(out_dir, state)
         return
 
-    rendered = {}
+    # every picture needed by any pending output, drawn at the same time (the renderer takes several)
+    needed = set()
+    if "files" in pending:
+        needed |= {"png", "pdf"} & (set(files["formats"]) | ({"png"} if cfg["outputs"]["web"]["enabled"] else set()))
+    if "bookstack" in pending:
+        needed.add("png")
+    rendered, render_error = {}, None
+    if needed:
+        url = cfg["render"]["export_url"]
+        try:
+            render.wait_ready(url)
+            with ThreadPoolExecutor(max_workers=len(needed)) as pool:
+                jobs = {fmt: pool.submit(render.png if fmt == "png" else render.pdf, url, chosen) for fmt in needed}
+                rendered = {fmt: job.result() for fmt, job in jobs.items()}
+        except Exception as e:  # reported by each output that needed a picture
+            render_error = e
 
     def get(fmt):
         if fmt not in rendered:
-            url = cfg["render"]["export_url"]
-            render.wait_ready(url)
-            rendered[fmt] = render.png(url, chosen) if fmt == "png" else render.pdf(url, chosen)
+            raise render_error or RuntimeError(f"no {fmt} was rendered")
         return rendered[fmt]
 
     for out in pending:

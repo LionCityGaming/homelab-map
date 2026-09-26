@@ -40,6 +40,9 @@ are greyed out with a dashed border, and 🌐 marks services reachable from the 
   Docker VM.
 - A Docker host's containers are grouped into lanes (Media Automation, Infrastructure, ...) in a
   grid below it, and every lane has its own line.
+- It wastes as little space as it can: short branches are tucked under their neighbours instead of
+  leaving empty space beside a deep one, and each lane gets the number of columns that makes the
+  whole map smallest. Set `layout: {compact: false}` to turn that off.
 
 ## Status
 
@@ -236,10 +239,16 @@ Found a security problem? Please report it privately; see [SECURITY.md](SECURITY
 Every parent's subtree gets its own vertical strip, so lines from different parents can't meet.
 Within one parent, a child straight below gets a straight line; children to each side leave the
 parent at their own point and turn at their own level, outermost first, so the lines nest instead
-of crossing. Container lanes are each fed down their own channel beside their column, lower lanes
-further out, which nests the same way. After every layout, every pair of line segments and every line against every box is
-checked; a layout that fails is never published (you get an alert instead). The test suite runs this
-against thousands of randomly generated homelabs.
+of crossing. Container lanes, and branches stacked under a neighbour, are each fed down their own
+channel beside their column, lower ones further out, which nests the same way.
+
+To use the space well, a search tries stacking neighbouring branches and giving lanes and grids
+more or fewer columns, keeping whatever makes the whole map smaller. It only runs again when the
+network's structure changes.
+
+After every layout, every pair of line segments and every line against every box is checked; a
+layout that fails is never published (you get an alert instead). The test suite runs this against
+thousands of randomly generated homelabs.
 
 ## Development
 

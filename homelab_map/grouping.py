@@ -5,6 +5,7 @@ In order: a homelab-map.group label on the container, then containers.groups in 
 repository's description and topics, and its Docker Hub description. Guesses produce a warning so
 you can confirm them in config.yaml; anything that can't be placed goes in "Other".
 """
+from concurrent.futures import ThreadPoolExecutor
 import json
 import re
 import time
@@ -104,20 +105,33 @@ def assign(graph, host, ccfg, image_labels, describe_cache):
     for title, names in ccfg["groups"].items():
         for n in names:
             by_name[str(n).lower()] = title
-    guessed = []
-    for node in graph.children(host.id):
-        if node.kind != "container":
-            continue
-        cname = node.extra["container"]
-        title = node.extra["labels"].get("homelab-map.group") or by_name.get(cname.lower()) \
-            or by_name.get(node.name.lower())
-        if not title and ccfg["auto_group"]:
+    containers = [n for n in graph.children(host.id) if n.kind == "container"]
+
+    def pinned(node):
+        return (node.extra["labels"].get("homelab-map.group") or by_name.get(node.extra["container"].lower())
+                or by_name.get(node.name.lower()))
+
+    # look up every image that needs it at the same time (each is a few web requests), not one by one;
+    # each image is looked up once, and an empty result (e.g. offline) is retried after a day
+    if ccfg["auto_group"]:
+        todo = {}
+        for node in containers:
             ref = image_ref(node.extra["image"])
             entry = describe_cache.get(ref)
-            # look each image up once; retry empty results (e.g. offline) after a day
-            if not entry or (not entry["text"] and time.time() - entry["at"] > 86400):
-                entry = describe_cache[ref] = {"text": describe(node.extra["image"], image_labels,
-                                                                ccfg["lookup_online"]), "at": time.time()}
+            if not pinned(node) and (not entry or (not entry["text"] and time.time() - entry["at"] > 86400)):
+                todo[ref] = node.extra["image"]
+        if todo:
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                texts = dict(zip(todo, pool.map(lambda image: describe(image, image_labels, ccfg["lookup_online"]),
+                                                todo.values())))
+            for ref, text in texts.items():
+                describe_cache[ref] = {"text": text, "at": time.time()}
+    guessed = []
+    for node in containers:
+        cname = node.extra["container"]
+        title = pinned(node)
+        if not title and ccfg["auto_group"]:
+            entry = describe_cache.get(image_ref(node.extra["image"])) or {"text": ""}
             title = guess(cname, node.extra["image"], entry["text"], keywords)
             guessed.append(cname)
             graph.guesses.append((title or OTHER, cname))

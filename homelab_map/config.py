@@ -66,6 +66,7 @@ DEFAULTS = {
     },
     "layout": {
         "lane_threshold": 6,             # more leaf devices than this under one parent become a lane
+        "compact": True,                 # stack short branches and pick lane columns to waste the least space
     },
     "outputs": {
         "files": {"enabled": True, "formats": ["drawio", "png", "pdf"]},

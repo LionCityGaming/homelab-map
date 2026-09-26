@@ -103,6 +103,7 @@ containers:
 
 # layout:
 #   lane_threshold: 6          # more leaf devices than this under one parent are drawn as a lane
+#   compact: true              # stack short branches and pick lane columns to waste the least space
 
 outputs:
   files:
