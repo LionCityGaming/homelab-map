@@ -9,7 +9,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/demo-dark-closeup.png">
-  <img alt="Close-up: a gateway and switch above a Proxmox host with VMs and LXCs (one stopped, shown greyed out), a NAS with a backup VM, and a Docker host whose containers are grouped into lanes such as Media Automation and Infrastructure, with a globe on the public ones" src="docs/demo-light-closeup.png">
+  <img alt="Close-up: a switch above a Proxmox host with VMs and LXCs (one stopped, shown greyed out), a NAS with a backup VM, and a Docker host whose containers are grouped into lanes such as Media Automation and Infrastructure, with a globe on the public ones" src="docs/demo-light-closeup.png">
 </picture>
 
 <sub>Close-up: a Proxmox host and its guests, and a Docker host's containers grouped into lanes. Stopped things are greyed out; 🌐 marks public services.</sub>
@@ -40,9 +40,10 @@ are greyed out with a dashed border, and 🌐 marks services reachable from the 
   Docker VM.
 - A Docker host's containers are grouped into lanes (Media Automation, Infrastructure, ...) in a
   grid below it, and every lane has its own line.
-- It wastes as little space as it can: short branches are tucked under their neighbours instead of
-  leaving empty space beside a deep one, and each lane gets the number of columns that makes the
-  whole map smallest. Set `layout: {compact: false}` to turn that off.
+- Every tier is one straight row, and every line runs down, across and down into the top of its box.
+  Each lane and container grid gets the number of columns that makes the whole map smallest
+  (`layout: {compact: false}` turns that off). `layout: {stack: true}` also tucks short branches
+  under their neighbours: a smaller map, but busier lines.
 
 ## Status
 

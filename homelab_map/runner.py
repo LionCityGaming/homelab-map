@@ -11,7 +11,7 @@ import json
 import os
 import time
 
-from . import drawio, notify, render
+from . import drawio, layout, notify, render
 from .collect import collect
 from .config import redact
 from .layout import LayoutError
@@ -60,8 +60,10 @@ def run_once(cfg, state, force=False):
         notify.send(cfg["notify"], "homelab-map", "\n".join(fresh)[-1500:], log)
     state["warnings"] = graph.warnings
 
+    layout.set_previous(state.get("layout_opts"))  # keep the map's arrangement stable across restarts
     try:
         light, dark, scene = drawio.build(graph, cfg)
+        state["layout_opts"] = layout.get_previous()
         clear(state, "layout")
     except LayoutError as e:
         alert(cfg, state, "layout", "homelab-map: layout problem, map not updated", str(e))

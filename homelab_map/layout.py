@@ -228,6 +228,7 @@ class _Col:
         self.members = members
         self.margin = CHANNEL_GAP + (len(members) - 2) * CHANNEL_STEP + CLEAR
         self.w = self.x = 0
+        self.direct = [True] + [False] * (len(members) - 1)  # fed straight down into its top?
 
     def measure(self):
         self.w = self.margin + max(_item_w(m) for m in self.members)
@@ -236,7 +237,21 @@ class _Col:
         return self.x + self.margin - CHANNEL_GAP - (j - 1) * CHANNEL_STEP
 
     def channels(self):
-        return [self.channel(j) for j in range(1, len(self.members))]
+        return [self.channel(j) for j in range(1, len(self.members)) if not self.direct[j]]
+
+    def route(self):
+        """A lower one gets a straight line down into its top when nothing above it in the column (boxes,
+        lines, or the side lines into those) is in the way; otherwise it uses its channel."""
+        pad = EDGE_PAD + BOX_PAD + 2
+        spans = []
+        for j, m in enumerate(self.members):
+            cx = m.x + m.w / 2
+            if j:
+                self.direct[j] = all(cx < lo - pad or cx > hi + pad for lo, hi in spans)
+            lo, hi = _x_extent(m)
+            if not self.direct[j]:
+                lo = min(lo, self.channel(j))
+            spans.append((lo, hi))
 
     def top_x(self):
         m = self.members[0]
@@ -263,6 +278,11 @@ class _Tree:
 
 def _is_leaf(it):
     return isinstance(it, _Lane) or (isinstance(it, _Tree) and not it.items and not it.grid and not it.hoisted)
+
+
+def _key(it):
+    """What a stacking choice calls a child: its node id, or its lane's key (stable between runs)."""
+    return it.node.id if isinstance(it, _Tree) else it.key
 
 
 def _col_of(t):
@@ -369,16 +389,13 @@ def build_tree(graph, cfg, opts=None, children=None):
                 it.depth = depth + 1
         stack = opts.get("stack", {}).get(node.id)
         if stack and not t.hoisted:
-            i, j, reverse = stack
-            movable = [it for it in t.items if not (isinstance(it, _Lane) and it.side)]
-            if 0 <= i < j < len(movable):
-                members = movable[i:j + 1]
-                if reverse:
-                    members = members[::-1]
+            movable = {_key(it): it for it in t.items if not (isinstance(it, _Lane) and it.side)}
+            members = [movable[k] for k in stack if k in movable]
+            if len(members) >= 2:
                 # each lower one starts below everything above it (rows are fixed up again after placing)
                 for a, b in zip(members, members[1:]):
                     _shift_depth(b, _max_depth(a) + 1 - (depth + 1))
-                pos = t.items.index(movable[i])
+                pos = min(t.items.index(m) for m in members)
                 t.items = [it for it in t.items if it not in members]
                 t.items.insert(pos, _Col(members))
         return t
@@ -457,6 +474,7 @@ def _line_count(t):
 
 
 def _place_x(t, left):
+    t._left = left
     if t.vpn:  # room kept on the left for the VPN lane, if the node needed it (see _measure)
         outer_left = left
         left += t.vpn_pad
@@ -497,11 +515,17 @@ def _place_x(t, left):
     cx = near if abs(near - row_centre) <= t.w / 2 or len(centres) == 1 else row_centre
     t.x = min(max(cx - t.w / 2, left), left + inner - t.w)
     col = _col_of(t)
-    if col:  # the column's channels must not run under the node, or its lines would turn both ways
+    if col:
+        # The column's channels must not run under the node (its lines would turn both ways). Of the
+        # positions clear of them (where centring put it, or just right of them, above the column's
+        # top), take the one with the shortest lines.
         chs = col.channels()
-        lo, hi = min(chs) - CLEAR, max(chs) + CLEAR
-        if not (t.x + t.w < lo or t.x > hi):
-            t.x = hi
+        if chs:
+            lo, hi = min(chs) - CLEAR, max(chs) + CLEAR
+            options = [x for x in (t.x, hi, lo - t.w)
+                       if (x + t.w <= lo or x >= hi) and left <= x <= left + inner - t.w] or [hi]
+            xs = _targets_x(t)
+            t.x = min(options, key=lambda x: sum(abs(c - (x + t.w / 2)) for c in xs))
     if t.vpn:
         t.vpn.x = max(t.x - SIBLING_GAP - t.vpn.w, outer_left)
 
@@ -513,8 +537,38 @@ def _place_item(it, x):
         it.x = x
         for m in it.members:
             _place_item(m, x + it.margin)
+        # move each one right, up to just short of the straight line down into the one below it, so it
+        # sits beside that line instead of out at the column's edge (bottom pair first)
+        pad = EDGE_PAD + BOX_PAD + 4
+        for upper, lower in reversed(list(zip(it.members, it.members[1:]))):
+            line_x = lower.x + lower.w / 2
+            lo, hi = _x_extent(upper)
+            shift = (line_x - pad) - hi
+            if shift > 0:
+                _place_item(upper, lo + shift if isinstance(upper, _Lane) else upper_left(upper) + shift)
+        it.route()
     else:
         it.x = x
+
+
+def upper_left(it):
+    """Where a subtree's rectangle starts (what _place_x was given)."""
+    return _x_extent(it)[0] if not isinstance(it, _Tree) else it._left
+
+
+def _x_extent(it):
+    """Leftmost and rightmost x of anything drawn for `it` (boxes, and so the lines between them)."""
+    if isinstance(it, _Col):
+        ext = [_x_extent(m) for m in it.members] + [(c, c) for c in it.channels()]
+        return min(e[0] for e in ext), max(e[1] for e in ext)
+    lo, hi = it.x, it.x + it.w
+    if isinstance(it, _Tree):
+        for c in it.items + ([it.hoisted] if it.hoisted else []) + ([it.vpn] if it.vpn else []):
+            clo, chi = _x_extent(c)
+            lo, hi = min(lo, clo), max(hi, chi)
+        if it.grid:
+            lo, hi = min(lo, it.grid.x), max(hi, it.grid.x + it.grid.w)
+    return lo, hi
 
 
 def _collect(t, rows):
@@ -535,7 +589,7 @@ def _targets_x(t, margin=20):
     xs = []
     for it in t.items:
         if isinstance(it, _Col):
-            xs += [it.top_x()] + it.channels()
+            xs += [m.x + m.w / 2 for m, d in zip(it.members, it.direct) if d] + it.channels()
         elif not _from_side(t, it, margin):
             xs.append(it.x + it.w / 2)
     if t.hoisted:
@@ -568,16 +622,21 @@ def layout(graph, cfg, top=0, left=0):
 _COMPACT_CACHE = {}  # the network's structure rarely changes: reuse the last choice for it
 
 
+WIRE_COST = 40  # px of area one px of line is worth: a compact map mustn't come from long detours
+
+
 def _area(graph, cfg, opts, children=None):
-    """The map's area, measured without drawing it (the search compares hundreds of these)."""
+    """How good an arrangement is (smaller is better): the map's area plus a cost for every px of
+    line, measured without drawing it (the search compares hundreds of these)."""
     size = _layout(graph, cfg, 0, 0, opts, children, size_only=True)
     if size is None:
         return float("inf")  # never choose an arrangement that couldn't be made to fit
-    return size[0] * size[1]
+    return size[0] * size[1] + WIRE_COST * size[2]
 
 
-def _knobs(root):
-    """Every lane (its item columns) and every container grid (its lane columns) in the tree."""
+def _knobs(root, stack=False):
+    """Every lane (its item columns) and every container grid (its lane columns) in the tree, and,
+    if `stack`, every run of neighbouring children that could be stacked in a column."""
     out = []
 
     def lane(l):
@@ -586,10 +645,10 @@ def _knobs(root):
     def walk(t):
         items = [x for it in t.items for x in (it.members if isinstance(it, _Col) else [it])]
         movable = [it for it in items if not (isinstance(it, _Lane) and it.side)]
-        if not t.hoisted and len(movable) >= 2:
-            n = len(movable)
-            out.append(("stack", t.node.id, [None] + [(i, j, r) for i in range(n) for j in range(i + 1, min(n, i + 3))
-                                                       for r in (False, True)]))
+        if stack and not t.hoisted and len(movable) >= 2:
+            keys = [_key(it) for it in movable]
+            windows = [tuple(keys[i:j + 1]) for i in range(len(keys)) for j in range(i + 1, min(len(keys), i + 3))]
+            out.append(("stack", t.node.id, [None] + windows + [w[::-1] for w in windows]))
         for it in items + ([t.vpn] if t.vpn else []) + ([t.hoisted] if t.hoisted else []):
             walk(it) if isinstance(it, _Tree) else lane(it)
         if t.grid:
@@ -602,17 +661,53 @@ def _knobs(root):
     return out
 
 
+_PREVIOUS = None  # the arrangement used last time: kept unless something is clearly better
+STABILITY = 0.95  # a fresh arrangement must be at least 5% better to replace the previous one
+
+
+def set_previous(opts):
+    """Seed the arrangement to keep (e.g. from saved state), so a restart doesn't reshuffle the map."""
+    global _PREVIOUS
+    if opts:
+        _PREVIOUS = {"lane_cols": dict(opts.get("lane_cols", {})), "grid_cols": dict(opts.get("grid_cols", {})),
+                     "stack": {k: tuple(v) if v else None for k, v in opts.get("stack", {}).items()}}
+
+
+def get_previous():
+    return _PREVIOUS
+
+
 def _compact(graph, cfg):
-    """Try other column counts for each lane and grid, and stacking neighbouring children in a column,
-    one at a time, keeping any that make the whole map smaller, until nothing helps."""
-    signature = (cfg["layout"]["lane_threshold"], cfg["containers"]["lane_columns"], tuple(cfg["containers"]["groups"]),
-                 tuple(sorted((n.id, n.parent, n.lane, n.kind, n.docker_host) for n in graph.nodes.values())))
+    """Choose column counts and which children to stack. Small changes to the network (a phone moving
+    between access points, a new container) shouldn't reshuffle the whole map, so the previous
+    arrangement is improved on and kept, unless a search from scratch finds one clearly (5%) better."""
+    global _PREVIOUS
+    signature = (cfg["layout"]["lane_threshold"], cfg["layout"].get("stack", False), cfg["containers"]["lane_columns"], tuple(cfg["containers"]["groups"]),
+                 tuple(sorted((n.id, n.parent, n.lane, n.kind, n.docker_host) for n in graph.nodes.values())),
+                 repr(_PREVIOUS))
     if signature in _COMPACT_CACHE:
         return _COMPACT_CACHE[signature]
-    opts = {"lane_cols": {}, "grid_cols": {}, "stack": {}}
-    best = _area(graph, cfg, opts)
     children = _children(graph)
-    knobs = _knobs(build_tree(graph, cfg, opts, children))
+    fresh, fresh_score = _search(graph, cfg, children, {"lane_cols": {}, "grid_cols": {}, "stack": {}})
+    opts = fresh
+    if _PREVIOUS:
+        kept, kept_score = _search(graph, cfg, children, _PREVIOUS)
+        if fresh_score >= STABILITY * kept_score:
+            opts = kept
+    if len(_COMPACT_CACHE) > 20:
+        _COMPACT_CACHE.clear()
+    _COMPACT_CACHE[signature] = opts
+    _PREVIOUS = opts
+    return opts
+
+
+def _search(graph, cfg, children, start):
+    """Greedy: try each choice's alternatives in turn, keeping any that improve the score."""
+    opts = {"lane_cols": dict(start["lane_cols"]), "grid_cols": dict(start["grid_cols"]), "stack": dict(start["stack"])}
+    best = _area(graph, cfg, opts, children)
+    if not cfg["layout"].get("stack", False):
+        opts["stack"] = {}
+    knobs = _knobs(build_tree(graph, cfg, opts, children), cfg["layout"].get("stack", False))
     for _ in range(3):
         improved = False
         for kind, key, values in knobs:
@@ -625,10 +720,7 @@ def _compact(graph, cfg):
                     best, opts, improved = a, trial, True
         if not improved:
             break
-    if len(_COMPACT_CACHE) > 20:
-        _COMPACT_CACHE.clear()
-    _COMPACT_CACHE[signature] = opts
-    return opts
+    return opts, best
 
 
 def _rows(root, top):
@@ -704,7 +796,7 @@ def _layout(graph, cfg, top, left, opts, children=None, size_only=False):
             settled = True
             break
     if size_only:
-        return (root.sub_w, _bottom(root, row_tops) - top) if settled else None
+        return (root.sub_w, _bottom(root, row_tops) - top, _wire_length(rows, row_tops, bands)) if settled else None
     scene = Scene()
     scene.settled = settled
 
@@ -723,7 +815,7 @@ def _layout(graph, cfg, top, left, opts, children=None, size_only=False):
                         else:
                             y = row_tops[m.depth]
                             dst, entry_y = m.place(scene, m.x, y), y + LANE_HEAD / 2
-                        if j == 0:
+                        if it.direct[j]:  # straight down into its top
                             targets.append((dst, m.x + m.w / 2, y, None))
                         else:
                             targets.append((dst, it.channel(j), entry_y, m.x))
@@ -744,6 +836,41 @@ def _layout(graph, cfg, top, left, opts, children=None, size_only=False):
             _fanout(scene, t, targets, band_top)
             _side_fanout(scene, t, side)
     return scene
+
+
+def _wire_length(rows, row_tops, bands):
+    """Roughly how long all the lines are (horizontal + vertical runs), without drawing them."""
+    total = 0
+    for depth, trees in rows.items():
+        for t in trees:
+            bx, by = t.x + t.w / 2, t.y + t.h
+            below = bands[depth][0] + bands[depth][1]
+            for it in t.items:
+                if isinstance(it, _Col):
+                    for j, m in enumerate(it.members):
+                        top = m.y if isinstance(m, _Tree) else row_tops[m.depth]
+                        if it.direct[j]:
+                            total += abs(m.x + m.w / 2 - bx) + (top - by)
+                        else:
+                            ch = it.channel(j)
+                            total += abs(ch - bx) + (top + 30 - by) + abs(m.x - ch)
+                elif isinstance(it, _Lane) and it.side:
+                    total += abs(it.x + it.w / 2 - (t.x + t.w)) + (below - t.y)
+                else:
+                    total += abs(it.x + it.w / 2 - bx) + (below - by)
+            if t.hoisted:
+                d = t.hoisted
+                total += abs(d.x + d.w / 2 - bx) + (row_tops[d.depth] - by)
+            if t.grid:
+                for col, cx in zip(t.grid.cols, t.grid.col_x):
+                    y = below
+                    for i, lane in enumerate(col):
+                        ch = t.grid.x + cx - CHANNEL_GAP - i * CHANNEL_STEP
+                        total += abs(ch - bx) + (y + LANE_HEAD / 2 - by) + (t.grid.x + cx - ch)
+                        y += lane.h + LANE_STACK_GAP
+            if t.vpn:
+                total += abs(t.x - (t.vpn.x + t.vpn.w))
+    return total
 
 
 def _fanout(scene, t, targets, band_top):
